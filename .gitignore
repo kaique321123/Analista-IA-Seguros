@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Ambiente e segredos
+.env
+.env.local
+
+# Banco local gerado (recriável via python data/generate_data.py)
+data/*.duckdb
+data/*.duckdb.wal
+
+# Artefatos temporários
+outputs/
+*.html
+.DS_Store
+Thumbs.db
