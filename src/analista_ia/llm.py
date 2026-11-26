@@ -147,7 +147,13 @@ class MockLLMClient(LLMClient):
                 "personalizadas via modelo de linguagem."
             )
 
-        q = _norm(user_prompt)
+        # Extrai apenas a pergunta de negócio para não confundir com palavras do contexto semântico
+        marker = "=== PERGUNTA DE NEGÓCIO ==="
+        if marker in user_prompt:
+            question_part = user_prompt.split(marker, 1)[1].split("===", 1)[0]
+        else:
+            question_part = user_prompt
+        q = _norm(question_part)
 
         if "sinistralidade" in q or "loss ratio" in q:
             return """
