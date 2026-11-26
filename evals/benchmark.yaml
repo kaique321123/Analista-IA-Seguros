@@ -1,0 +1,155 @@
+version: "1.0"
+description: >
+  Conjunto de perguntas de negócio em português com SQL gabarito para avaliar
+  validade sintática e Execution Accuracy do agente Text-to-SQL.
+
+cases:
+  - id: q01_premio_por_ramo
+    category: agregacao_basica
+    question: "Qual o prêmio emitido total e a quantidade de apólices por ramo?"
+    expected_sql: |
+      SELECT
+          ramo,
+          COUNT(DISTINCT apolice_id) AS quantidade_apolices,
+          ROUND(SUM(premio_emitido), 2) AS premio_emitido_total
+      FROM apolices
+      GROUP BY ramo
+      ORDER BY premio_emitido_total DESC
+
+  - id: q02_ticket_medio_ramo
+    category: metrica_semantica
+    question: "Qual o ticket médio por ramo?"
+    expected_sql: |
+      SELECT
+          ramo,
+          ROUND(AVG(premio_emitido), 2) AS ticket_medio
+      FROM apolices
+      GROUP BY ramo
+      ORDER BY ticket_medio DESC
+
+  - id: q03_sinistralidade_por_ramo
+    category: anti_fan_out
+    question: "Qual a sinistralidade por ramo?"
+    expected_sql: |
+      WITH sinistros_por_apolice AS (
+          SELECT apolice_id, SUM(valor_pago) AS total_pago
+          FROM sinistros
+          WHERE status_sinistro = 'Pago'
+          GROUP BY apolice_id
+      )
+      SELECT
+          a.ramo,
+          ROUND(SUM(COALESCE(s.total_pago, 0)) * 100.0 / NULLIF(SUM(a.premio_emitido), 0), 2) AS sinistralidade_pct
+      FROM apolices a
+      LEFT JOIN sinistros_por_apolice s ON a.apolice_id = s.apolice_id
+      GROUP BY a.ramo
+      ORDER BY sinistralidade_pct DESC
+
+  - id: q04_taxa_renovacao_por_ramo
+    category: metrica_semantica
+    question: "Qual a taxa de renovação por ramo?"
+    expected_sql: |
+      SELECT
+          ramo,
+          ROUND(SUM(CASE WHEN renovada THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS taxa_renovacao_pct
+      FROM renovacoes
+      WHERE elegivel_renovacao = TRUE
+      GROUP BY ramo
+      ORDER BY taxa_renovacao_pct DESC
+
+  - id: q05_churn_por_canal
+    category: join_e_metrica
+    question: "Qual a taxa de renovação e churn por canal de venda?"
+    expected_sql: |
+      SELECT
+          a.canal_venda,
+          ROUND(SUM(CASE WHEN r.renovada THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS taxa_renovacao_pct,
+          ROUND(SUM(CASE WHEN NOT r.renovada THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS taxa_churn_pct
+      FROM renovacoes r
+      JOIN apolices a ON r.apolice_id = a.apolice_id
+      WHERE r.elegivel_renovacao = TRUE
+      GROUP BY a.canal_venda
+      ORDER BY taxa_renovacao_pct DESC
+
+  - id: q06_motivos_nao_renovacao
+    category: filtro_negocio
+    question: "Quais os principais motivos de não renovação?"
+    expected_sql: |
+      SELECT
+          motivo_nao_renovacao,
+          COUNT(*) AS qtd_nao_renovadas
+      FROM renovacoes
+      WHERE elegivel_renovacao = TRUE AND renovada = FALSE
+      GROUP BY motivo_nao_renovacao
+      ORDER BY qtd_nao_renovadas DESC
+
+  - id: q07_evolucao_mensal_premio
+    category: serie_temporal
+    question: "Qual a evolução mensal do prêmio emitido?"
+    expected_sql: |
+      SELECT
+          STRFTIME(data_emissao, '%Y-%m') AS mes,
+          ROUND(SUM(premio_emitido), 2) AS premio_emitido_total
+      FROM apolices
+      GROUP BY mes
+      ORDER BY mes ASC
+
+  - id: q08_sinistros_pagos_por_tipo
+    category: filtro_status
+    question: "Qual o total de sinistros pagos por tipo de sinistro?"
+    expected_sql: |
+      SELECT
+          tipo_sinistro,
+          ROUND(SUM(valor_pago), 2) AS sinistros_pagos_total
+      FROM sinistros
+      WHERE status_sinistro = 'Pago'
+      GROUP BY tipo_sinistro
+      ORDER BY sinistros_pagos_total DESC
+
+  - id: q09_severidade_media_ramo
+    category: metrica_semantica
+    question: "Qual a severidade média de sinistros pagos por ramo?"
+    expected_sql: |
+      SELECT
+          ramo,
+          ROUND(AVG(valor_pago), 2) AS severidade_media
+      FROM sinistros
+      WHERE status_sinistro = 'Pago'
+      GROUP BY ramo
+      ORDER BY severidade_media DESC
+
+  - id: q10_frequencia_sinistros_ramo
+    category: join_e_metrica
+    question: "Qual a frequência de sinistros por ramo?"
+    expected_sql: |
+      SELECT
+          a.ramo,
+          ROUND(COUNT(DISTINCT s.apolice_id) * 100.0 / NULLIF(COUNT(DISTINCT a.apolice_id), 0), 2) AS frequencia_sinistros_pct
+      FROM apolices a
+      LEFT JOIN sinistros s ON a.apolice_id = s.apolice_id
+      GROUP BY a.ramo
+      ORDER BY frequencia_sinistros_pct DESC
+
+  - id: q11_premio_por_regiao
+    category: join_clientes
+    question: "Qual o prêmio emitido total por região dos clientes?"
+    expected_sql: |
+      SELECT
+          c.regiao,
+          ROUND(SUM(a.premio_emitido), 2) AS premio_emitido_total
+      FROM apolices a
+      JOIN clientes c ON a.cliente_id = c.cliente_id
+      GROUP BY c.regiao
+      ORDER BY premio_emitido_total DESC
+
+  - id: q12_reajuste_medio_renovacao
+    category: metrica_semantica
+    question: "Qual o reajuste médio na renovação por ramo?"
+    expected_sql: |
+      SELECT
+          ramo,
+          ROUND(AVG((premio_renovado - premio_anterior) * 100.0 / NULLIF(premio_anterior, 0)), 2) AS reajuste_medio_pct
+      FROM renovacoes
+      WHERE renovada = TRUE AND premio_renovado IS NOT NULL
+      GROUP BY ramo
+      ORDER BY reajuste_medio_pct DESC
