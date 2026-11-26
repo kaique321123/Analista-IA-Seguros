@@ -32,11 +32,19 @@ class LLMClient(ABC):
 class AnthropicClient(LLMClient):
     provider_name = "anthropic"
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-latest") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-sonnet-latest",
+        max_output_tokens: int = 800,
+        timeout_seconds: float = 45.0,
+    ) -> None:
         if not api_key:
             raise LLMError("ANTHROPIC_API_KEY não configurada no ambiente/.env.")
         self.api_key = api_key
         self.model = model or "claude-3-5-sonnet-latest"
+        self.max_output_tokens = max_output_tokens
+        self.timeout_seconds = timeout_seconds
 
     def complete(self, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
         response = httpx.post(
@@ -48,12 +56,12 @@ class AnthropicClient(LLMClient):
             },
             json={
                 "model": self.model,
-                "max_tokens": 1200,
+                "max_tokens": self.max_output_tokens,
                 "temperature": temperature,
                 "system": system_prompt,
                 "messages": [{"role": "user", "content": user_prompt}],
             },
-            timeout=60.0,
+            timeout=self.timeout_seconds,
         )
         if response.status_code >= 400:
             raise LLMError(f"Erro Anthropic ({response.status_code}): {response.text}")
@@ -65,11 +73,19 @@ class AnthropicClient(LLMClient):
 class OpenAIClient(LLMClient):
     provider_name = "openai"
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        max_output_tokens: int = 800,
+        timeout_seconds: float = 45.0,
+    ) -> None:
         if not api_key:
             raise LLMError("OPENAI_API_KEY não configurada no ambiente/.env.")
         self.api_key = api_key
         self.model = model or "gpt-4o-mini"
+        self.max_output_tokens = max_output_tokens
+        self.timeout_seconds = timeout_seconds
 
     def complete(self, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
         response = httpx.post(
@@ -80,13 +96,14 @@ class OpenAIClient(LLMClient):
             },
             json={
                 "model": self.model,
+                "max_tokens": self.max_output_tokens,
                 "temperature": temperature,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
             },
-            timeout=60.0,
+            timeout=self.timeout_seconds,
         )
         if response.status_code >= 400:
             raise LLMError(f"Erro OpenAI ({response.status_code}): {response.text}")
@@ -97,11 +114,19 @@ class OpenAIClient(LLMClient):
 class GeminiClient(LLMClient):
     provider_name = "gemini"
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        max_output_tokens: int = 800,
+        timeout_seconds: float = 45.0,
+    ) -> None:
         if not api_key:
             raise LLMError("GEMINI_API_KEY não configurada no ambiente/.env.")
         self.api_key = api_key
         self.model = model or "gemini-2.5-flash"
+        self.max_output_tokens = max_output_tokens
+        self.timeout_seconds = timeout_seconds
 
     def complete(self, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
         url = (
@@ -110,14 +135,19 @@ class GeminiClient(LLMClient):
         )
         response = httpx.post(
             url,
-            params={"key": self.api_key},
-            headers={"Content-Type": "application/json"},
+            headers={
+                "x-goog-api-key": self.api_key,
+                "Content-Type": "application/json",
+            },
             json={
                 "system_instruction": {"parts": [{"text": system_prompt}]},
                 "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                "generationConfig": {"temperature": temperature},
+                "generationConfig": {
+                    "temperature": temperature,
+                    "maxOutputTokens": self.max_output_tokens,
+                },
             },
-            timeout=60.0,
+            timeout=self.timeout_seconds,
         )
         if response.status_code >= 400:
             raise LLMError(f"Erro Gemini ({response.status_code}): {response.text}")
@@ -247,12 +277,17 @@ class MockLLMClient(LLMClient):
 def create_llm_client(settings: Settings, provider_override: str | None = None) -> LLMClient:
     """Instancia o cliente LLM conforme configuração ou override."""
     provider = (provider_override or settings.llm_provider).lower()
+    common = {
+        "model": settings.llm_model,
+        "max_output_tokens": settings.llm_max_output_tokens,
+        "timeout_seconds": settings.llm_timeout_seconds,
+    }
     if provider == "anthropic":
-        return AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_model)
+        return AnthropicClient(api_key=settings.anthropic_api_key, **common)
     if provider == "openai":
-        return OpenAIClient(api_key=settings.openai_api_key, model=settings.llm_model)
+        return OpenAIClient(api_key=settings.openai_api_key, **common)
     if provider == "gemini":
-        return GeminiClient(api_key=settings.gemini_api_key, model=settings.llm_model)
+        return GeminiClient(api_key=settings.gemini_api_key, **common)
     if provider == "mock":
         return MockLLMClient()
     raise LLMError(f"Provedor LLM desconhecido: '{provider}'. Use anthropic, openai, gemini ou mock.")

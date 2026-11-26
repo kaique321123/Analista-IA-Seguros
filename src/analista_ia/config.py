@@ -22,12 +22,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    llm_provider: LLMProviderName = Field(default="anthropic")
+    llm_provider: LLMProviderName = Field(default="gemini")
     llm_model: str = Field(default="")
+    llm_max_output_tokens: int = Field(default=800, ge=100, le=4096)
+    llm_timeout_seconds: float = Field(default=45.0, ge=5.0, le=180.0)
 
+    gemini_api_key: str = Field(default="")
     anthropic_api_key: str = Field(default="")
     openai_api_key: str = Field(default="")
-    gemini_api_key: str = Field(default="")
 
     duckdb_path: Path = Field(default=PROJECT_ROOT / "data" / "seguros.duckdb")
     semantic_layer_dir: Path = Field(default=PROJECT_ROOT / "semantic_layer")
