@@ -1,0 +1,190 @@
+version: "1.0"
+dialect: duckdb
+domain: seguros_brasil
+description: >
+  Base analítica sintética de uma seguradora brasileira com dados de clientes,
+  apólices emitidas, renovações e sinistros entre 2023 e 2025.
+
+tables:
+  - name: clientes
+    description: Cadastro de segurados (pessoas físicas e jurídicas).
+    grain: 1 linha por cliente único.
+    primary_key: cliente_id
+    columns:
+      - name: cliente_id
+        type: INTEGER
+        description: Identificador único do cliente.
+      - name: tipo_pessoa
+        type: VARCHAR
+        description: Natureza jurídica do cliente.
+        values: ["PF", "PJ"]
+      - name: faixa_etaria
+        type: VARCHAR
+        description: Faixa etária para PF ou 'Empresa' para PJ.
+        values: ["18-29", "30-44", "45-59", "60+", "Empresa"]
+      - name: regiao
+        type: VARCHAR
+        description: Macrorregião geográfica do Brasil.
+        values: ["Sudeste", "Sul", "Nordeste", "Centro-Oeste", "Norte"]
+      - name: uf
+        type: VARCHAR
+        description: Unidade Federativa (sigla de 2 letras, ex. SP, RJ, MG, PR, RS).
+      - name: segmento
+        type: VARCHAR
+        description: Segmentação comercial do cliente.
+        values: ["Varejo", "Afluente", "PME", "Corporate"]
+      - name: data_cadastro
+        type: DATE
+        description: Data de entrada do cliente na base.
+
+  - name: apolices
+    description: Apólices de seguro emitidas com vigência anual, prêmio e canal de venda.
+    grain: 1 linha por apólice emitida.
+    primary_key: apolice_id
+    columns:
+      - name: apolice_id
+        type: INTEGER
+        description: Identificador único da apólice.
+      - name: cliente_id
+        type: INTEGER
+        description: Chave estrangeira para clientes.cliente_id.
+      - name: ramo
+        type: VARCHAR
+        description: Linha de produto / ramo do seguro.
+        values: ["Auto", "Residencial", "Vida", "Empresarial"]
+      - name: canal_venda
+        type: VARCHAR
+        description: Canal de distribuição utilizado na contratação.
+        values: ["Corretor", "Digital", "Bancassurance", "Parcerias"]
+      - name: data_emissao
+        type: DATE
+        description: Data de emissão da apólice (2023-01-01 a 2025-12-15).
+      - name: data_inicio_vigencia
+        type: DATE
+        description: Início da cobertura da apólice.
+      - name: data_fim_vigencia
+        type: DATE
+        description: Fim da cobertura da apólice (vigência anual de 365 dias).
+      - name: premio_emitido
+        type: DOUBLE
+        description: Valor anual do prêmio emitido em reais (R$).
+      - name: importancia_segurada
+        type: DOUBLE
+        description: Valor máximo de cobertura (capital segurado) em reais (R$).
+      - name: status
+        type: VARCHAR
+        description: Status atual da apólice na data de corte (2025-12-31).
+        values: ["Ativa", "Vencida", "Cancelada"]
+
+  - name: renovacoes
+    description: Histórico de vencimentos e decisão de renovação das apólices vencidas até 2025-12-31.
+    grain: 1 linha por apólice vencida avaliada para renovação.
+    primary_key: renovacao_id
+    columns:
+      - name: renovacao_id
+        type: INTEGER
+        description: Identificador único do evento de renovação.
+      - name: apolice_id
+        type: INTEGER
+        description: Chave estrangeira para apolices.apolice_id.
+      - name: cliente_id
+        type: INTEGER
+        description: Chave estrangeira para clientes.cliente_id.
+      - name: ramo
+        type: VARCHAR
+        description: Ramo da apólice vencida.
+        values: ["Auto", "Residencial", "Vida", "Empresarial"]
+      - name: data_vencimento
+        type: DATE
+        description: Data de vencimento da vigência original.
+      - name: elegivel_renovacao
+        type: BOOLEAN
+        description: Indica se a apólice era elegível para renovação (exclui canceladas antes do vencimento).
+      - name: renovada
+        type: BOOLEAN
+        description: Indica se o cliente efetivamente renovou a apólice.
+      - name: motivo_nao_renovacao
+        type: VARCHAR
+        description: Motivo principal quando renovada = FALSE (NULL quando renovada = TRUE).
+        values: ["Preco", "Concorrencia", "Atendimento", "Sinistro", "Desistencia"]
+      - name: premio_anterior
+        type: DOUBLE
+        description: Prêmio da vigência anterior em reais (R$).
+      - name: premio_renovado
+        type: DOUBLE
+        description: Prêmio contratado na renovação em reais (NULL quando não renovada).
+
+  - name: sinistros
+    description: Sinistros ocorridos e avisados durante a vigência das apólices.
+    grain: 1 linha por sinistro registrado (uma apólice pode ter 0, 1 ou mais sinistros).
+    primary_key: sinistro_id
+    columns:
+      - name: sinistro_id
+        type: INTEGER
+        description: Identificador único do sinistro.
+      - name: apolice_id
+        type: INTEGER
+        description: Chave estrangeira para apolices.apolice_id.
+      - name: cliente_id
+        type: INTEGER
+        description: Chave estrangeira para clientes.cliente_id.
+      - name: ramo
+        type: VARCHAR
+        description: Ramo da apólice sinistrada.
+        values: ["Auto", "Residencial", "Vida", "Empresarial"]
+      - name: data_ocorrencia
+        type: DATE
+        description: Data em que o evento do sinistro ocorreu.
+      - name: data_aviso
+        type: DATE
+        description: Data em que o sinistro foi comunicado à seguradora.
+      - name: tipo_sinistro
+        type: VARCHAR
+        description: Classificação do sinistro (sem acentos).
+        values:
+          - "Colisao"
+          - "Roubo/Furto"
+          - "Assistencia"
+          - "Vidros"
+          - "Danos Eletricos"
+          - "Incendio"
+          - "Falecimento/Invalidez"
+          - "Doenca Grave"
+          - "Responsabilidade Civil"
+      - name: status_sinistro
+        type: VARCHAR
+        description: Status atual da regulação do sinistro (sem acentos).
+        values: ["Pago", "Em Analise", "Negado"]
+      - name: valor_reclamado
+        type: DOUBLE
+        description: Valor inicialmente solicitado pelo segurado em reais (R$).
+      - name: valor_pago
+        type: DOUBLE
+        description: Valor efetivamente indenizado em reais (0.0 quando Em Analise ou Negado).
+
+relationships:
+  - from_table: apolices
+    from_column: cliente_id
+    to_table: clientes
+    to_column: cliente_id
+    type: many_to_one
+  - from_table: renovacoes
+    from_column: apolice_id
+    to_table: apolices
+    to_column: apolice_id
+    type: one_to_one
+  - from_table: renovacoes
+    from_column: cliente_id
+    to_table: clientes
+    to_column: cliente_id
+    type: many_to_one
+  - from_table: sinistros
+    from_column: apolice_id
+    to_table: apolices
+    to_column: apolice_id
+    type: many_to_one
+  - from_table: sinistros
+    from_column: cliente_id
+    to_table: clientes
+    to_column: cliente_id
+    type: many_to_one

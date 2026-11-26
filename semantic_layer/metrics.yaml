@@ -1,0 +1,178 @@
+version: "1.0"
+metrics:
+  - name: premio_emitido_total
+    label: Prêmio Emitido Total
+    description: Soma do valor de prêmios emitidos nas apólices (receita bruta de emissão).
+    base_table: apolices
+    required_tables: ["apolices"]
+    unit: BRL
+    formula_sql: "ROUND(SUM(apolices.premio_emitido), 2)"
+    synonyms:
+      - "prêmio emitido"
+      - "premio emitido"
+      - "faturamento"
+      - "receita"
+      - "volume de premios"
+    caveats: >
+      Nunca faça JOIN direto com sinistros antes de somar premio_emitido,
+      pois uma apólice pode ter múltiplos sinistros e duplicaria o prêmio.
+
+  - name: ticket_medio
+    label: Ticket Médio
+    description: Valor médio de prêmio emitido por apólice.
+    base_table: apolices
+    required_tables: ["apolices"]
+    unit: BRL
+    formula_sql: "ROUND(AVG(apolices.premio_emitido), 2)"
+    synonyms:
+      - "ticket médio"
+      - "ticket medio"
+      - "premio medio"
+      - "prêmio médio"
+      - "valor medio da apolice"
+    caveats: >
+      Calculado no grão da tabela apolices (1 linha por apólice).
+
+  - name: quantidade_apolices
+    label: Quantidade de Apólices
+    description: Contagem total de apólices emitidas.
+    base_table: apolices
+    required_tables: ["apolices"]
+    unit: count
+    formula_sql: "COUNT(DISTINCT apolices.apolice_id)"
+    synonyms:
+      - "total de apolices"
+      - "numero de apolices"
+      - "vendas"
+      - "volume de apolices"
+    caveats: >
+      Use COUNT(DISTINCT apolice_id) quando houver JOIN com sinistros.
+
+  - name: sinistros_pagos_total
+    label: Total de Sinistros Pagos
+    description: Soma das indenizações efetivamente pagas em reais.
+    base_table: sinistros
+    required_tables: ["sinistros"]
+    unit: BRL
+    formula_sql: "ROUND(SUM(CASE WHEN sinistros.status_sinistro = 'Pago' THEN sinistros.valor_pago ELSE 0 END), 2)"
+    synonyms:
+      - "sinistros pagos"
+      - "indenizacoes"
+      - "indenizações"
+      - "custo de sinistros"
+      - "valor pago em sinistros"
+    caveats: >
+      Considere apenas registros com status_sinistro = 'Pago' (ou valor_pago, que já é 0 nos demais status).
+
+  - name: sinistralidade
+    label: Sinistralidade (%)
+    description: >
+      Percentual do prêmio emitido consumido por sinistros pagos (Loss Ratio).
+      Calculado como (total de sinistros pagos / total de prêmio emitido) * 100.
+    base_table: apolices
+    required_tables: ["apolices", "sinistros"]
+    unit: percent
+    formula_sql: >
+      ROUND(
+        COALESCE(sinistros_agg.total_pago, 0) * 100.0 / NULLIF(apolices_agg.total_premio, 0),
+        2
+      )
+    synonyms:
+      - "sinistralidade"
+      - "loss ratio"
+      - "indice de sinistralidade"
+      - "índice de sinistralidade"
+    caveats: >
+      REGRA CRÍTICA (anti-fan-out): agregue sinistros por apolice_id (ou pela dimensão de análise)
+      em uma CTE ANTES de juntar com apolices, para nunca duplicar premio_emitido quando uma apólice
+      possui mais de um sinistro.
+
+  - name: taxa_renovacao
+    label: Taxa de Renovação (%)
+    description: Percentual de apólices elegíveis que foram renovadas no vencimento.
+    base_table: renovacoes
+    required_tables: ["renovacoes"]
+    unit: percent
+    formula_sql: >
+      ROUND(
+        SUM(CASE WHEN renovacoes.renovada THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+      )
+    synonyms:
+      - "taxa de renovacao"
+      - "taxa de renovação"
+      - "retencao"
+      - "retenção"
+      - "renovacao"
+    caveats: >
+      SEMPRE filtre WHERE renovacoes.elegivel_renovacao = TRUE ao calcular taxa de renovação.
+
+  - name: taxa_churn
+    label: Taxa de Churn (%)
+    description: Percentual de apólices elegíveis que NÃO foram renovadas no vencimento.
+    base_table: renovacoes
+    required_tables: ["renovacoes"]
+    unit: percent
+    formula_sql: >
+      ROUND(
+        SUM(CASE WHEN NOT renovacoes.renovada THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+      )
+    synonyms:
+      - "churn"
+      - "taxa de churn"
+      - "nao renovacao"
+      - "não renovação"
+      - "evasao"
+      - "perda de carteira"
+    caveats: >
+      SEMPRE filtre WHERE renovacoes.elegivel_renovacao = TRUE ao calcular churn.
+      Equivale a 100 - taxa_renovacao.
+
+  - name: severidade_media
+    label: Severidade Média de Sinistros
+    description: Valor médio pago por sinistro efetivamente indenizado.
+    base_table: sinistros
+    required_tables: ["sinistros"]
+    unit: BRL
+    formula_sql: "ROUND(AVG(CASE WHEN sinistros.status_sinistro = 'Pago' THEN sinistros.valor_pago END), 2)"
+    synonyms:
+      - "severidade"
+      - "severidade media"
+      - "custo medio de sinistro"
+      - "ticket medio de sinistro"
+    caveats: >
+      Calcule apenas sobre sinistros com status_sinistro = 'Pago' para não diluir com zeros de negados/em análise.
+
+  - name: frequencia_sinistros
+    label: Frequência de Sinistros (%)
+    description: Percentual de apólices que registraram ao menos um sinistro.
+    base_table: apolices
+    required_tables: ["apolices", "sinistros"]
+    unit: percent
+    formula_sql: "ROUND(COUNT(DISTINCT sinistros.apolice_id) * 100.0 / NULLIF(COUNT(DISTINCT apolices.apolice_id), 0), 2)"
+    synonyms:
+      - "frequencia de sinistros"
+      - "frequência"
+      - "incidencia de sinistros"
+    caveats: >
+      Use LEFT JOIN de apolices para sinistros e COUNT(DISTINCT apolice_id) no numerador e denominador.
+
+  - name: reajuste_medio_renovacao
+    label: Reajuste Médio na Renovação (%)
+    description: Variação percentual média do prêmio renovado em relação ao prêmio anterior.
+    base_table: renovacoes
+    required_tables: ["renovacoes"]
+    unit: percent
+    formula_sql: >
+      ROUND(
+        AVG((renovacoes.premio_renovado - renovacoes.premio_anterior) * 100.0 / NULLIF(renovacoes.premio_anterior, 0)),
+        2
+      )
+    synonyms:
+      - "reajuste"
+      - "reajuste medio"
+      - "aumento de premio"
+      - "variacao de premio na renovacao"
+    caveats: >
+      Filtre WHERE renovacoes.renovada = TRUE AND renovacoes.premio_renovado IS NOT NULL.
