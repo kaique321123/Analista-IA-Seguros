@@ -12,11 +12,15 @@ from data.generate_data import generate_duckdb
 
 @pytest.fixture(scope="module")
 def web_client(tmp_path_factory: pytest.TempPathFactory) -> TestClient:
-    db_path = tmp_path_factory.mktemp("web_db") / "seguros.duckdb"
+    tmp_dir = tmp_path_factory.mktemp("web_db")
+    db_path = tmp_dir / "seguros.duckdb"
+    quota_db = tmp_dir / "quota.sqlite3"
     generate_duckdb(db_path=db_path, n_clientes=200, n_apolices=400, seed=42)
     settings = Settings(
         llm_provider="mock",
         duckdb_path=db_path,
+        quota_db_path=quota_db,
+        lifetime_question_limit=2,
         semantic_layer_dir=PROJECT_ROOT / "semantic_layer",
         rate_limit_max_requests=2,
         rate_limit_window_seconds=600,

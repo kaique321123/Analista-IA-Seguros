@@ -28,8 +28,14 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=45.0, ge=5.0, le=180.0)
 
     # Proteções da API web e guardrails para demonstrações públicas temporárias
+    lifetime_question_limit: int = Field(default=4, ge=1, le=10000)
+    quota_secret: str = Field(default="analista-ia-dev-secret-change-in-prod")
+    quota_db_path: Path = Field(default=PROJECT_ROOT / "data" / "quota.sqlite3")
+    upstash_redis_rest_url: str = Field(default="")
+    upstash_redis_rest_token: str = Field(default="")
+
     rate_limit_per_minute_ip: int = Field(default=4, ge=1, le=120)
-    rate_limit_max_requests: int = Field(default=15, ge=1, le=1000)
+    rate_limit_max_requests: int = Field(default=4, ge=1, le=1000)
     rate_limit_window_seconds: int = Field(default=600, ge=10, le=86400)
     global_rpm_limit: int = Field(default=10, ge=1, le=500)
     daily_request_cap: int = Field(default=150, ge=1, le=50000)
@@ -57,6 +63,10 @@ class Settings(BaseSettings):
     @property
     def resolved_semantic_dir(self) -> Path:
         return self.resolve_path(self.semantic_layer_dir)
+
+    @property
+    def resolved_quota_db_path(self) -> Path:
+        return self.resolve_path(self.quota_db_path)
 
 
 def get_settings() -> Settings:

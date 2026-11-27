@@ -93,13 +93,27 @@ function renderMarkdownBasic(mdText) {
   return html;
 }
 
+function getClientToken() {
+  const key = "aid_client_token";
+  try {
+    let token = localStorage.getItem(key);
+    if (!token || token.length < 16) {
+      const arr = new Uint8Array(16);
+      window.crypto.getRandomValues(arr);
+      token = Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem(key, token);
+    }
+    return token;
+  } catch (e) {
+    return "";
+  }
+}
+
 function updateQuotaPill(rl) {
   if (!rl || !els.quotaPill) return;
-  const total = `${rl.remaining_ip}/${rl.max_requests} total`;
-  els.quotaPill.textContent =
-    rl.per_minute_ip !== undefined
-      ? `Cota: ${rl.remaining_minute_ip}/${rl.per_minute_ip} por min · ${total}`
-      : `Cota: ${total}`;
+  const rem = rl.lifetime_remaining !== undefined ? rl.lifetime_remaining : rl.remaining_ip;
+  const max = rl.lifetime_limit !== undefined ? rl.lifetime_limit : rl.max_requests;
+  els.quotaPill.textContent = `Cota: ${rem}/${max} perguntas`;
 }
 
 function showError(msg) {
@@ -383,7 +397,10 @@ function renderDrawer() {
 
 async function loadOverview() {
   try {
-    const res = await fetch("/api/overview");
+    const token = getClientToken();
+    const res = await fetch("/api/overview", {
+      headers: token ? { "X-Client-Token": token } : {},
+    });
     if (!res.ok) throw new Error("Falha ao carregar visão geral.");
     const data = await res.json();
 
@@ -412,9 +429,12 @@ async function submitQuestion(question) {
   clearError();
   setLoading(true);
   try {
+    const token = getClientToken();
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers["X-Client-Token"] = token;
     const res = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ question: clean }),
     });
     const data = await res.json();

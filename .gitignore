@@ -15,9 +15,11 @@ venv/
 .env
 .env.local
 
-# Banco local gerado (recriável via python data/generate_data.py)
+# Banco local gerado (recriável via python data/generate_data.py) e cota local
 data/*.duckdb
 data/*.duckdb.wal
+data/*.sqlite3
+data/*.sqlite3-journal
 
 # Artefatos temporários
 outputs/

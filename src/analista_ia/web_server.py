@@ -6,7 +6,7 @@ import json
 import math
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,6 +19,14 @@ from analista_ia.guardrails import (
     MultiTierRateLimiter,
     RateLimitExceeded,
     validate_user_question,
+)
+from analista_ia.quota import (
+    COOKIE_MAX_AGE,
+    COOKIE_NAME,
+    CrossLinkedQuotaManager,
+    QuotaStore,
+    SQLiteQuotaStore,
+    UpstashRedisQuotaStore,
 )
 from analista_ia.semantic import load_semantic_layer
 
@@ -51,10 +59,27 @@ def _clean_json_value(val: Any) -> Any:
 
 
 def _client_ip(request: Request) -> str:
+    for header in ("cf-connecting-ip", "true-client-ip", "x-real-ip"):
+        val = request.headers.get(header)
+        if val and val.strip():
+            return val.strip()
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "local"
+
+
+def _set_visitor_cookie(response: Response, signed_value: str, request: Request) -> None:
+    is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=signed_value,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/",
+    )
 
 
 def _compute_portfolio_kpis(executor: DuckDBExecutor) -> dict[str, Any]:
@@ -108,6 +133,21 @@ def create_app(
         global_rpm=cfg.global_rpm_limit,
         daily_cap=cfg.daily_request_cap,
     )
+    sqlite_store: QuotaStore = SQLiteQuotaStore(cfg.resolved_quota_db_path)
+    quota_store: QuotaStore = (
+        UpstashRedisQuotaStore(
+            rest_url=cfg.upstash_redis_rest_url,
+            rest_token=cfg.upstash_redis_rest_token,
+            fallback=sqlite_store,
+        )
+        if cfg.upstash_redis_rest_url and cfg.upstash_redis_rest_token
+        else sqlite_store
+    )
+    quota_manager = CrossLinkedQuotaManager(
+        limit=cfg.lifetime_question_limit,
+        secret=cfg.quota_secret,
+        store=quota_store,
+    )
 
     app = FastAPI(
         title="Analista de Dados com IA — Seguros",
@@ -125,8 +165,23 @@ def create_app(
         )
 
     @app.get("/api/overview")
-    def overview(request: Request) -> dict[str, Any]:
+    def overview(request: Request, response: Response) -> dict[str, Any]:
         ip = _client_ip(request)
+        visitor_id, signed_cookie = quota_manager.verify_or_create_visitor_cookie(
+            request.cookies.get(COOKIE_NAME)
+        )
+        _set_visitor_cookie(response, signed_cookie, request)
+        client_token = request.headers.get("x-client-token")
+
+        rl = limiter.status(ip)
+        q_status = quota_manager.status(ip=ip, visitor_id=visitor_id, client_token=client_token)
+        merged_rl = {
+            **rl,
+            **q_status,
+            "max_requests": q_status["lifetime_limit"],
+            "remaining_ip": min(rl["remaining_ip"], q_status["lifetime_remaining"]),
+        }
+
         active_provider = provider_override or cfg.llm_provider
         return {
             "provider": active_provider,
@@ -134,7 +189,7 @@ def create_app(
             "max_question_length": cfg.max_question_length,
             "kpis": _compute_portfolio_kpis(executor),
             "table_counts": executor.get_table_counts(),
-            "rate_limit": limiter.status(ip),
+            "rate_limit": merged_rl,
             "semantic_layer": {
                 "tables": [
                     {
@@ -168,8 +223,14 @@ def create_app(
         }
 
     @app.post("/api/ask")
-    def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
-        # 1. Guardrail de entrada ANTES do rate-limit e do LLM (custo zero de tokens)
+    def ask(payload: AskRequest, request: Request, response: Response) -> dict[str, Any]:
+        visitor_id, signed_cookie = quota_manager.verify_or_create_visitor_cookie(
+            request.cookies.get(COOKIE_NAME)
+        )
+        _set_visitor_cookie(response, signed_cookie, request)
+        client_token = request.headers.get("x-client-token")
+
+        # 1. Guardrail de entrada ANTES da cota e do LLM (custo zero de tokens)
         try:
             question = validate_user_question(
                 payload.question,
@@ -180,10 +241,27 @@ def create_app(
             status_code = 422 if exc.code in {"too_long", "too_short", "too_many_words"} else 400
             raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
-        # 2. Rate limiting multi-camada (RPM por IP, janela 10min, RPM global, teto diário)
+        # 2. Cota permanente vinculada (IP + Cookie assinado + Client Token) + Rate limit RPM/diário
         ip = _client_ip(request)
         try:
-            rl_status = limiter.check_and_consume(ip)
+            # Verifica primeiro se ainda possui saldo nas 4 perguntas totais antes de consumir RPM
+            current_used, _ = quota_manager.get_usage(
+                ip=ip, visitor_id=visitor_id, client_token=client_token
+            )
+            if current_used >= quota_manager.limit:
+                quota_manager.check_and_consume(
+                    ip=ip, visitor_id=visitor_id, client_token=client_token
+                )
+            rl = limiter.check_and_consume(ip)
+            q_status = quota_manager.check_and_consume(
+                ip=ip, visitor_id=visitor_id, client_token=client_token
+            )
+            rl_status = {
+                **rl,
+                **q_status,
+                "max_requests": q_status["lifetime_limit"],
+                "remaining_ip": min(rl["remaining_ip"], q_status["lifetime_remaining"]),
+            }
         except RateLimitExceeded as exc:
             raise HTTPException(
                 status_code=429,
