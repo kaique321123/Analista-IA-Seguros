@@ -94,7 +94,7 @@ function renderMarkdownBasic(mdText) {
 
 function updateQuotaPill(rl) {
   if (!rl) return;
-  els.quotaPill.textContent = `Cota: ${rl.remaining_ip}/${rl.max_requests} perguntas`;
+  els.quotaPill.textContent = `Cota: ${rl.remaining_minute_ip}/${rl.per_minute_ip} min · ${rl.remaining_ip}/${rl.max_requests} total`;
 }
 
 function showError(msg) {

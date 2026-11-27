@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from analista_ia.charts import build_chart
 from analista_ia.config import Settings, get_settings
 from analista_ia.db import DuckDBExecutor
+from analista_ia.guardrails import validate_user_question
 from analista_ia.llm import LLMClient, create_llm_client
 from analista_ia.semantic import SemanticLayer, load_semantic_layer
 from analista_ia.sql_validator import SQLValidationError, validate_and_prepare_sql
@@ -63,6 +64,8 @@ class DataAnalystAgent:
         default_limit: int = 100,
         max_limit: int = 500,
         max_retries: int = 1,
+        max_question_length: int = 240,
+        max_question_words: int = 45,
     ) -> None:
         self.semantic_layer = semantic_layer
         self.db_executor = db_executor
@@ -70,6 +73,8 @@ class DataAnalystAgent:
         self.default_limit = default_limit
         self.max_limit = max_limit
         self.max_retries = max_retries
+        self.max_question_length = max_question_length
+        self.max_question_words = max_question_words
 
     @classmethod
     def from_settings(
@@ -87,6 +92,8 @@ class DataAnalystAgent:
             llm_client=llm,
             default_limit=cfg.sql_default_limit,
             max_limit=cfg.sql_max_limit,
+            max_question_length=cfg.max_question_length,
+            max_question_words=cfg.max_question_words,
         )
 
     def _generate_sql(
@@ -125,11 +132,15 @@ class DataAnalystAgent:
                 "informados. Tente ampliar o período ou revisar os critérios da pergunta."
             )
 
-        preview_csv = df.head(25).to_csv(index=False)
+        preview_df = df.head(15).copy()
+        for col in preview_df.columns:
+            if not pd.api.types.is_numeric_dtype(preview_df[col]):
+                preview_df[col] = preview_df[col].astype(str).str.slice(0, 80)
+        preview_csv = preview_df.to_csv(index=False)
         user_prompt = (
             f"Pergunta do usuário: {question}\n\n"
             f"SQL validado executado:\n{sql_validated}\n\n"
-            f"Amostra dos resultados ({len(df)} linhas no total, exibindo até 25):\n{preview_csv}"
+            f"Amostra dos resultados ({len(df)} linhas no total, exibindo até 15):\n{preview_csv}"
         )
         return self.llm_client.complete(
             system_prompt=INTERPRETATION_SYSTEM_PROMPT,
@@ -138,10 +149,12 @@ class DataAnalystAgent:
         )
 
     def ask(self, question: str) -> AnalysisResult:
-        """Executa o fluxo completo: camada semântica -> SQL -> validação -> execução -> gráfico -> interpretação."""
-        question_clean = question.strip()
-        if not question_clean:
-            raise ValueError("A pergunta não pode ser vazia.")
+        """Executa o fluxo completo: guardrails -> camada semântica -> SQL -> validação -> execução -> gráfico -> interpretação."""
+        question_clean = validate_user_question(
+            question,
+            max_chars=self.max_question_length,
+            max_words=self.max_question_words,
+        )
 
         matched_metrics = [m.label for m in self.semantic_layer.find_relevant_metrics(question_clean)]
         semantic_context = self.semantic_layer.to_prompt_context(question_clean)

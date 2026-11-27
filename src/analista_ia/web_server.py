@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import time
-from collections import defaultdict, deque
-from datetime import date
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,84 +14,19 @@ from pydantic import BaseModel, Field
 from analista_ia.agent import DataAnalystAgent
 from analista_ia.config import PROJECT_ROOT, Settings, get_settings
 from analista_ia.db import DuckDBExecutor
+from analista_ia.guardrails import (
+    GuardrailViolation,
+    MultiTierRateLimiter,
+    RateLimitExceeded,
+    validate_user_question,
+)
 from analista_ia.semantic import load_semantic_layer
 
 STATIC_DIR = PROJECT_ROOT / "web" / "static"
 
 
-class RateLimiter:
-    """Rate limiter em memória por IP (janela deslizante) + teto diário global."""
-
-    def __init__(
-        self,
-        max_requests: int = 15,
-        window_seconds: int = 600,
-        daily_cap: int = 200,
-    ) -> None:
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.daily_cap = daily_cap
-        self._ip_hits: dict[str, deque[float]] = defaultdict(deque)
-        self._current_day: date = date.today()
-        self._daily_count: int = 0
-
-    def _reset_day_if_needed(self) -> None:
-        today = date.today()
-        if today != self._current_day:
-            self._current_day = today
-            self._daily_count = 0
-
-    def _prune_ip(self, ip: str, now: float) -> deque[float]:
-        q = self._ip_hits[ip]
-        cutoff = now - self.window_seconds
-        while q and q[0] < cutoff:
-            q.popleft()
-        return q
-
-    def status(self, ip: str) -> dict[str, int]:
-        self._reset_day_if_needed()
-        now = time.monotonic()
-        q = self._prune_ip(ip, now)
-        return {
-            "max_requests": self.max_requests,
-            "window_seconds": self.window_seconds,
-            "remaining_ip": max(self.max_requests - len(q), 0),
-            "daily_cap": self.daily_cap,
-            "daily_remaining": max(self.daily_cap - self._daily_count, 0),
-        }
-
-    def check_and_consume(self, ip: str) -> dict[str, int]:
-        self._reset_day_if_needed()
-        if self._daily_count >= self.daily_cap:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    "Limite diário da demonstração pública atingido. "
-                    "Tente novamente amanhã ou rode localmente com sua própria chave."
-                ),
-            )
-
-        now = time.monotonic()
-        q = self._prune_ip(ip, now)
-        if len(q) >= self.max_requests:
-            retry_after = int(max(1, self.window_seconds - (now - q[0])))
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"Limite de {self.max_requests} perguntas a cada "
-                    f"{self.window_seconds // 60} min atingido para seu IP. "
-                    f"Aguarde ~{retry_after}s para continuar."
-                ),
-                headers={"Retry-After": str(retry_after)},
-            )
-
-        q.append(now)
-        self._daily_count += 1
-        return self.status(ip)
-
-
 class AskRequest(BaseModel):
-    question: str = Field(..., min_length=3, max_length=2000)
+    question: str = Field(..., min_length=1, max_length=2000)
 
 
 def _clean_json_value(val: Any) -> Any:
@@ -161,9 +92,11 @@ def create_app(
     cfg = settings or get_settings()
     semantic = load_semantic_layer(cfg.resolved_semantic_dir)
     executor = DuckDBExecutor(cfg.resolved_duckdb_path)
-    limiter = RateLimiter(
-        max_requests=cfg.rate_limit_max_requests,
+    limiter = MultiTierRateLimiter(
+        per_minute_ip=cfg.rate_limit_per_minute_ip,
+        max_requests_window_ip=cfg.rate_limit_max_requests,
         window_seconds=cfg.rate_limit_window_seconds,
+        global_rpm=cfg.global_rpm_limit,
         daily_cap=cfg.daily_request_cap,
     )
 
@@ -224,16 +157,29 @@ def create_app(
 
     @app.post("/api/ask")
     def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
-        question = payload.question.strip()
-        if len(question) > cfg.max_question_length:
-            raise HTTPException(
-                status_code=422,
-                detail=f"A pergunta excede o limite de {cfg.max_question_length} caracteres.",
+        # 1. Guardrail de entrada ANTES do rate-limit e do LLM (custo zero de tokens)
+        try:
+            question = validate_user_question(
+                payload.question,
+                max_chars=cfg.max_question_length,
+                max_words=cfg.max_question_words,
             )
+        except GuardrailViolation as exc:
+            status_code = 422 if exc.code in {"too_long", "too_short", "too_many_words"} else 400
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
+        # 2. Rate limiting multi-camada (RPM por IP, janela 10min, RPM global, teto diário)
         ip = _client_ip(request)
-        rl_status = limiter.check_and_consume(ip)
+        try:
+            rl_status = limiter.check_and_consume(ip)
+        except RateLimitExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail=str(exc),
+                headers={"Retry-After": str(exc.retry_after)},
+            ) from exc
 
+        # 3. Execução do agente Text-to-SQL
         try:
             agent = DataAnalystAgent.from_settings(
                 settings=cfg,
