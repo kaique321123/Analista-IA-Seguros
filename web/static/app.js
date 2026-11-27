@@ -7,6 +7,7 @@ const state = {
 
 const els = {
   providerLabel: document.getElementById("provider-label"),
+  quotaPill: document.getElementById("quota-pill"),
   kpiPremio: document.getElementById("kpi-premio"),
   kpiApolices: document.getElementById("kpi-apolices"),
   kpiRenovacao: document.getElementById("kpi-renovacao"),
@@ -89,6 +90,15 @@ function renderMarkdownBasic(mdText) {
   }
   if (inList) html += "</ul>";
   return html;
+}
+
+function updateQuotaPill(rl) {
+  if (!rl || !els.quotaPill) return;
+  const total = `${rl.remaining_ip}/${rl.max_requests} total`;
+  els.quotaPill.textContent =
+    rl.per_minute_ip !== undefined
+      ? `Cota: ${rl.remaining_minute_ip}/${rl.per_minute_ip} por min · ${total}`
+      : `Cota: ${total}`;
 }
 
 function showError(msg) {
@@ -323,6 +333,8 @@ async function loadOverview() {
     const data = await res.json();
 
     els.providerLabel.textContent = `${data.provider.toUpperCase()} · ${data.model}`;
+    updateQuotaPill(data.rate_limit);
+
     state.maxLength = data.max_question_length || 300;
     els.input.maxLength = state.maxLength;
     els.charCounter.textContent = `0 / ${state.maxLength}`;
@@ -354,6 +366,7 @@ async function submitQuestion(question) {
     if (!res.ok) {
       throw new Error(data.detail || "Não foi possível processar sua pergunta.");
     }
+    updateQuotaPill(data.rate_limit);
     renderResultCard(data);
     els.input.value = "";
     els.charCounter.textContent = `0 / ${state.maxLength}`;

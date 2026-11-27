@@ -25,6 +25,15 @@ from analista_ia.semantic import load_semantic_layer
 STATIC_DIR = PROJECT_ROOT / "web" / "static"
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """Serve os arquivos estáticos sem cache para que ajustes de design apareçam ao recarregar."""
+
+    async def get_response(self, path, scope):  # type: ignore[no-untyped-def]
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
 
@@ -106,11 +115,14 @@ def create_app(
     )
 
     if STATIC_DIR.exists():
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     @app.get("/api/overview")
     def overview(request: Request) -> dict[str, Any]:
