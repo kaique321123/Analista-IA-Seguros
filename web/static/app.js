@@ -7,7 +7,6 @@ const state = {
 
 const els = {
   providerLabel: document.getElementById("provider-label"),
-  quotaPill: document.getElementById("quota-pill"),
   kpiPremio: document.getElementById("kpi-premio"),
   kpiApolices: document.getElementById("kpi-apolices"),
   kpiRenovacao: document.getElementById("kpi-renovacao"),
@@ -92,11 +91,6 @@ function renderMarkdownBasic(mdText) {
   return html;
 }
 
-function updateQuotaPill(rl) {
-  if (!rl) return;
-  els.quotaPill.textContent = `Cota: ${rl.remaining_minute_ip}/${rl.per_minute_ip} min · ${rl.remaining_ip}/${rl.max_requests} total`;
-}
-
 function showError(msg) {
   els.errorBanner.textContent = msg;
   els.errorBanner.classList.remove("hidden");
@@ -130,6 +124,56 @@ function downloadCSV(columns, rows, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+const CHART_PALETTE = ["#38bdf8", "#2dd4bf", "#fbbf24", "#fb7185", "#a3e635", "#60a5fa"];
+const CHART_INK = "#e4e4ea";
+const CHART_MUTED = "#8d8d98";
+const CHART_GRID = "rgba(255,255,255,0.08)";
+
+function styleAxis(axis) {
+  const base = axis || {};
+  const title = typeof base.title === "string" ? { text: base.title } : base.title || {};
+  return Object.assign({}, base, {
+    gridcolor: CHART_GRID,
+    linecolor: CHART_GRID,
+    zerolinecolor: CHART_GRID,
+    tickfont: { color: CHART_MUTED, size: 12 },
+    title: Object.assign({}, title, { font: { color: CHART_MUTED, size: 12 } }),
+  });
+}
+
+function themeFigure(fig) {
+  const srcLayout = Object.assign({}, fig.layout || {});
+  delete srcLayout.template;
+  const srcTitle = typeof srcLayout.title === "string" ? { text: srcLayout.title } : srcLayout.title || {};
+
+  const data = (fig.data || []).map((trace, i) => {
+    const color = CHART_PALETTE[i % CHART_PALETTE.length];
+    const t = Object.assign({}, trace);
+    t.marker = Object.assign({}, trace.marker || {});
+    if (typeof t.marker.color !== "object") t.marker.color = color;
+    if (trace.line || trace.type === "scatter") {
+      t.line = Object.assign({}, trace.line || {}, { color, width: 3 });
+    }
+    t.textfont = { color: CHART_INK, size: 12 };
+    return t;
+  });
+
+  const layout = Object.assign({}, srcLayout, {
+    autosize: true,
+    margin: { t: 56, r: 24, b: 56, l: 64 },
+    font: { family: "IBM Plex Sans, sans-serif", color: CHART_INK },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    colorway: CHART_PALETTE,
+    title: Object.assign({}, srcTitle, { x: 0.02, font: { color: CHART_INK, size: 15 } }),
+    xaxis: styleAxis(srcLayout.xaxis),
+    yaxis: styleAxis(srcLayout.yaxis),
+    legend: Object.assign({}, srcLayout.legend || {}, { font: { color: CHART_MUTED } }),
+    hoverlabel: { bgcolor: "#17171c", bordercolor: "#2dd4bf", font: { color: CHART_INK } },
+  });
+  return { data, layout };
 }
 
 function renderResultCard(data) {
@@ -213,17 +257,10 @@ function renderResultCard(data) {
 
   els.resultsFeed.prepend(card);
 
-  // Render Plotly chart
+  // Render Plotly chart (tema escuro Enterprise)
   if (hasChart && window.Plotly) {
-    const fig = data.chart;
-    const layout = Object.assign({}, fig.layout || {}, {
-      autosize: true,
-      margin: { t: 48, r: 24, b: 48, l: 56 },
-      font: { family: "Plus Jakarta Sans, sans-serif", color: "#0f172a" },
-      paper_bgcolor: "#ffffff",
-      plot_bgcolor: "#ffffff",
-    });
-    window.Plotly.newPlot(chartId, fig.data || [], layout, {
+    const themed = themeFigure(data.chart);
+    window.Plotly.newPlot(chartId, themed.data, themed.layout, {
       responsive: true,
       displaylogo: false,
     });
@@ -256,7 +293,7 @@ function renderDrawer() {
       .map(
         (m) => `
         <div class="semantic-item">
-          <h3>${escapeHtml(m.label)} <span style="font-weight:500;color:#64748b;">(${escapeHtml(m.name)})</span></h3>
+          <h3>${escapeHtml(m.label)} <span class="muted">${escapeHtml(m.name)}</span></h3>
           <p>${escapeHtml(m.description)}</p>
           <pre><code>${escapeHtml(m.formula_sql)}</code></pre>
           ${m.caveats ? `<div class="semantic-caveat"><strong>Regra:</strong> ${escapeHtml(m.caveats)}</div>` : ""}
@@ -270,7 +307,7 @@ function renderDrawer() {
         <div class="semantic-item">
           <h3>${escapeHtml(t.name)}</h3>
           <p>${escapeHtml(t.description)} · <strong>Grão:</strong> ${escapeHtml(t.grain)}</p>
-          <p style="font-family:var(--font-mono);font-size:0.75rem;color:#0f2942;">
+          <p class="semantic-cols">
             ${t.columns.map((c) => `${escapeHtml(c.name)} (${escapeHtml(c.type)})`).join(" · ")}
           </p>
         </div>`
@@ -286,8 +323,6 @@ async function loadOverview() {
     const data = await res.json();
 
     els.providerLabel.textContent = `${data.provider.toUpperCase()} · ${data.model}`;
-    updateQuotaPill(data.rate_limit);
-
     state.maxLength = data.max_question_length || 300;
     els.input.maxLength = state.maxLength;
     els.charCounter.textContent = `0 / ${state.maxLength}`;
@@ -319,7 +354,6 @@ async function submitQuestion(question) {
     if (!res.ok) {
       throw new Error(data.detail || "Não foi possível processar sua pergunta.");
     }
-    updateQuotaPill(data.rate_limit);
     renderResultCard(data);
     els.input.value = "";
     els.charCounter.textContent = `0 / ${state.maxLength}`;
