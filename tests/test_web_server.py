@@ -20,6 +20,9 @@ def web_client(tmp_path_factory: pytest.TempPathFactory) -> TestClient:
         llm_provider="mock",
         duckdb_path=db_path,
         quota_db_path=quota_db,
+        redis_url="",
+        upstash_redis_rest_url="",
+        upstash_redis_rest_token="",
         lifetime_question_limit=2,
         semantic_layer_dir=PROJECT_ROOT / "semantic_layer",
         rate_limit_max_requests=2,
@@ -75,3 +78,27 @@ def test_blocks_sql_and_prompt_injection_before_llm(web_client: TestClient) -> N
     )
     assert r_inj.status_code == 400
     assert "guardrail" in r_inj.json()["detail"].lower()
+
+
+def test_vercel_serverless_bootstrap_generates_db_in_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setenv("TEMP", str(tmp_path))
+    monkeypatch.setenv("TMP", str(tmp_path))
+
+    missing_db = tmp_path / "readonly_repo" / "seguros.duckdb"
+    settings = Settings(
+        llm_provider="mock",
+        duckdb_path=missing_db,
+        redis_url="",
+        upstash_redis_rest_url="",
+        upstash_redis_rest_token="",
+        semantic_layer_dir=PROJECT_ROOT / "semantic_layer",
+    )
+    app = create_app(settings=settings, provider_override="mock")
+    client = TestClient(app)
+    res = client.get("/api/overview")
+    assert res.status_code == 200
+    assert res.json()["kpis"]["total_apolices"] == 4500

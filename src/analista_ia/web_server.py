@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -120,11 +123,31 @@ def _compute_portfolio_kpis(executor: DuckDBExecutor) -> dict[str, Any]:
     return {k: _clean_json_value(v) for k, v in row.items()}
 
 
+def _ensure_serverless_paths(cfg: Settings) -> Settings:
+    """Garante caminhos graváveis (/tmp) e gera o DuckDB sob demanda em ambientes serverless (ex.: Vercel)."""
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    tmp_dir = Path(tempfile.gettempdir())
+
+    db_path = cfg.resolved_duckdb_path
+    if not db_path.exists():
+        target_db = (tmp_dir / "seguros.duckdb") if is_serverless else db_path
+        if not target_db.exists():
+            from data.generate_data import generate_duckdb
+
+            generate_duckdb(db_path=target_db)
+        db_path = target_db
+
+    quota_path = (tmp_dir / "quota.sqlite3") if is_serverless else cfg.resolved_quota_db_path
+    if db_path != cfg.duckdb_path or quota_path != cfg.quota_db_path:
+        cfg = cfg.model_copy(update={"duckdb_path": db_path, "quota_db_path": quota_path})
+    return cfg
+
+
 def create_app(
     settings: Settings | None = None,
     provider_override: str | None = None,
 ) -> FastAPI:
-    cfg = settings or get_settings()
+    cfg = _ensure_serverless_paths(settings or get_settings())
     semantic = load_semantic_layer(cfg.resolved_semantic_dir)
     executor = DuckDBExecutor(cfg.resolved_duckdb_path)
     limiter = MultiTierRateLimiter(

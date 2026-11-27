@@ -21,7 +21,6 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "plotly>=5.22.0",
     "rich>=13.7.0",
-    "streamlit>=1.38.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
     "redis>=5.0.0",
@@ -29,6 +28,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+streamlit = [
+    "streamlit>=1.38.0",
+]
 dev = [
     "pytest>=8.2.0",
     "ruff>=0.6.0",
