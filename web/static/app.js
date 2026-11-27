@@ -3,6 +3,7 @@ const state = {
   activeTab: "metrics",
   maxLength: 300,
   chartCounter: 0,
+  charts: [],
 };
 
 const els = {
@@ -136,10 +137,59 @@ function downloadCSV(columns, rows, filename) {
   URL.revokeObjectURL(url);
 }
 
-const CHART_PALETTE = ["#38bdf8", "#2dd4bf", "#fbbf24", "#fb7185", "#a3e635", "#60a5fa"];
-const CHART_INK = "#e4e4ea";
-const CHART_MUTED = "#8d8d98";
-const CHART_GRID = "rgba(255,255,255,0.08)";
+const CHART_THEMES = {
+  dark: {
+    palette: ["#38bdf8", "#2dd4bf", "#fbbf24", "#fb7185", "#a3e635", "#60a5fa"],
+    ink: "#e4e4ea",
+    muted: "#8d8d98",
+    grid: "rgba(255,255,255,0.08)",
+    hoverBg: "#17171c",
+  },
+  light: {
+    palette: ["#0c5cab", "#0d9488", "#d97706", "#e11d48", "#65a30d", "#2563eb"],
+    ink: "#0f172a",
+    muted: "#64748b",
+    grid: "rgba(15,23,42,0.10)",
+    hoverBg: "#ffffff",
+  },
+};
+
+let CHART_PALETTE = CHART_THEMES.dark.palette;
+let CHART_INK = CHART_THEMES.dark.ink;
+let CHART_MUTED = CHART_THEMES.dark.muted;
+let CHART_GRID = CHART_THEMES.dark.grid;
+let CHART_HOVER_BG = CHART_THEMES.dark.hoverBg;
+
+function currentTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function refreshChartTheme() {
+  const t = CHART_THEMES[currentTheme()];
+  CHART_PALETTE = t.palette;
+  CHART_INK = t.ink;
+  CHART_MUTED = t.muted;
+  CHART_GRID = t.grid;
+  CHART_HOVER_BG = t.hoverBg;
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("theme", theme); } catch (e) { /* sem persistência */ }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "light" ? "#f6f8fb" : "#09090b");
+  refreshChartTheme();
+  if (window.Plotly) {
+    for (const item of state.charts) {
+      const el = document.getElementById(item.id);
+      if (!el) continue;
+      const themed = themeFigure(item.fig);
+      window.Plotly.react(item.id, themed.data, themed.layout);
+    }
+  }
+}
+
+refreshChartTheme();
 
 function styleAxis(axis) {
   const base = axis || {};
@@ -167,12 +217,16 @@ function themeFigure(fig) {
       t.line = Object.assign({}, trace.line || {}, { color, width: 3 });
     }
     t.textfont = { color: CHART_INK, size: 12 };
+    if (trace.type === "bar") {
+      t.textposition = "outside";
+      t.cliponaxis = false;
+    }
     return t;
   });
 
   const layout = Object.assign({}, srcLayout, {
     autosize: true,
-    margin: { t: 56, r: 24, b: 56, l: 64 },
+    margin: { t: 56, r: 56, b: 56, l: 64 },
     font: { family: "IBM Plex Sans, sans-serif", color: CHART_INK },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
@@ -181,7 +235,7 @@ function themeFigure(fig) {
     xaxis: styleAxis(srcLayout.xaxis),
     yaxis: styleAxis(srcLayout.yaxis),
     legend: Object.assign({}, srcLayout.legend || {}, { font: { color: CHART_MUTED } }),
-    hoverlabel: { bgcolor: "#17171c", bordercolor: "#2dd4bf", font: { color: CHART_INK } },
+    hoverlabel: { bgcolor: CHART_HOVER_BG, bordercolor: CHART_PALETTE[1], font: { color: CHART_INK } },
   });
   return { data, layout };
 }
@@ -270,6 +324,7 @@ function renderResultCard(data) {
   // Render Plotly chart (tema escuro Enterprise)
   if (hasChart && window.Plotly) {
     const themed = themeFigure(data.chart);
+    state.charts.push({ id: chartId, fig: data.chart });
     window.Plotly.newPlot(chartId, themed.data, themed.layout, {
       responsive: true,
       displaylogo: false,
@@ -412,6 +467,10 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     state.activeTab = btn.getAttribute("data-tab");
     renderDrawer();
   });
+});
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  applyTheme(currentTheme() === "light" ? "dark" : "light");
 });
 
 document.addEventListener("DOMContentLoaded", loadOverview);
