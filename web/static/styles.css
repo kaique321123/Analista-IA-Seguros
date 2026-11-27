@@ -99,7 +99,6 @@ html[data-theme="light"] .kpi-card:hover { border-color: var(--primary-ink); }
 html[data-theme="light"] .btn-primary { border-color: transparent; }
 html[data-theme="light"] .sql-details summary { color: var(--text); }
 html[data-theme="light"] .drawer-panel { box-shadow: -16px 0 48px rgba(15, 23, 42, 0.18); }
-}
 
 * { box-sizing: border-box; }
 
