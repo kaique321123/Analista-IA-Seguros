@@ -26,6 +26,7 @@ from analista_ia.quota import (
     CrossLinkedQuotaManager,
     QuotaStore,
     SQLiteQuotaStore,
+    StandardRedisQuotaStore,
     UpstashRedisQuotaStore,
 )
 from analista_ia.semantic import load_semantic_layer
@@ -134,15 +135,19 @@ def create_app(
         daily_cap=cfg.daily_request_cap,
     )
     sqlite_store: QuotaStore = SQLiteQuotaStore(cfg.resolved_quota_db_path)
-    quota_store: QuotaStore = (
-        UpstashRedisQuotaStore(
+    if cfg.redis_url:
+        quota_store: QuotaStore = StandardRedisQuotaStore(
+            redis_url=cfg.redis_url,
+            fallback=sqlite_store,
+        )
+    elif cfg.upstash_redis_rest_url and cfg.upstash_redis_rest_token:
+        quota_store = UpstashRedisQuotaStore(
             rest_url=cfg.upstash_redis_rest_url,
             rest_token=cfg.upstash_redis_rest_token,
             fallback=sqlite_store,
         )
-        if cfg.upstash_redis_rest_url and cfg.upstash_redis_rest_token
-        else sqlite_store
-    )
+    else:
+        quota_store = sqlite_store
     quota_manager = CrossLinkedQuotaManager(
         limit=cfg.lifetime_question_limit,
         secret=cfg.quota_secret,

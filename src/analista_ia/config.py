@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     lifetime_question_limit: int = Field(default=4, ge=1, le=10000)
     quota_secret: str = Field(default="analista-ia-dev-secret-change-in-prod")
     quota_db_path: Path = Field(default=PROJECT_ROOT / "data" / "quota.sqlite3")
+    redis_url: str = Field(default="")
     upstash_redis_rest_url: str = Field(default="")
     upstash_redis_rest_token: str = Field(default="")
 

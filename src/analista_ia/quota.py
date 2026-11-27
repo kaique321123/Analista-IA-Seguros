@@ -83,6 +83,48 @@ class SQLiteQuotaStore:
             conn.commit()
 
 
+class StandardRedisQuotaStore:
+    """Persistência via protocolo Redis padrão (redis:// ou rediss:// — Redis Cloud, Upstash, etc.)."""
+
+    def __init__(self, redis_url: str, fallback: QuotaStore, client: object | None = None) -> None:
+        import redis
+
+        self.fallback = fallback
+        self._client = client or redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=3.0,
+            socket_timeout=3.0,
+        )
+
+    def get_many(self, keys: list[str]) -> dict[str, int]:
+        if not keys:
+            return {}
+        try:
+            values = self._client.mget(keys)  # type: ignore[attr-defined]
+            return {
+                k: int(v)
+                for k, v in zip(keys, values)
+                if v is not None and str(v).isdigit()
+            }
+        except Exception:
+            return self.fallback.get_many(keys)
+
+    def set_max_many(self, keys: list[str], value: int) -> None:
+        self.fallback.set_max_many(keys, value)
+        if not keys:
+            return
+        try:
+            current = self.get_many(keys)
+            pipe = self._client.pipeline()  # type: ignore[attr-defined]
+            for k in keys:
+                new_val = max(current.get(k, 0), value)
+                pipe.set(k, str(new_val))
+            pipe.execute()
+        except Exception:
+            pass
+
+
 class UpstashRedisQuotaStore:
     """Persistência serverless gratuita via Upstash Redis REST API (sobrevive a deploys/sleep)."""
 

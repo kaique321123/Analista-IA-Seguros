@@ -86,3 +86,42 @@ def test_blocks_incognito_tab_on_same_ip(quota_app) -> None:
     )
     assert r_incog.status_code == 429
     assert "4 perguntas" in r_incog.json()["detail"]
+
+
+class _FakeRedisPipeline:
+    def __init__(self, store: dict[str, str]) -> None:
+        self._store = store
+        self._ops: list[tuple[str, str]] = []
+
+    def set(self, k: str, v: str) -> None:
+        self._ops.append((k, v))
+
+    def execute(self) -> None:
+        for k, v in self._ops:
+            self._store[k] = v
+
+
+class _FakeRedisClient:
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    def mget(self, keys: list[str]) -> list[str | None]:
+        return [self.data.get(k) for k in keys]
+
+    def pipeline(self) -> _FakeRedisPipeline:
+        return _FakeRedisPipeline(self.data)
+
+
+def test_standard_redis_quota_store_never_decreases(tmp_path: Path) -> None:
+    from analista_ia.quota import SQLiteQuotaStore, StandardRedisQuotaStore
+
+    fallback = SQLiteQuotaStore(tmp_path / "fb.sqlite3")
+    fake_client = _FakeRedisClient()
+    store = StandardRedisQuotaStore("redis://localhost:6379/0", fallback=fallback, client=fake_client)
+
+    store.set_max_many(["k1", "k2"], 3)
+    assert store.get_many(["k1", "k2"]) == {"k1": 3, "k2": 3}
+
+    # Tentativa de gravar valor menor nunca reduz a cota já gasta
+    store.set_max_many(["k1"], 1)
+    assert store.get_many(["k1"]) == {"k1": 3}
