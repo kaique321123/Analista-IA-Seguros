@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analista de Dados com IA · Seguros</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="bg-accent" aria-hidden="true"></div>
+
+  <!-- Top Navigation -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div>
+          <span class="brand-title">Analista de Dados com IA</span>
+          <span class="brand-sub">Text-to-SQL · Camada Semântica · DuckDB Read-Only</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span id="status-pill" class="pill pill-live" title="Motor de IA ativo">
+          <span class="dot"></span>
+          <span id="provider-label">Carregando...</span>
+        </span>
+        <span id="quota-pill" class="pill pill-muted" title="Proteção de cota por IP">
+          Cota: --
+        </span>
+        <button id="open-semantic-btn" class="btn-outline" type="button">
+          Camada Semântica
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Hero & Prompt Card -->
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Portfólio · Engenharia Analítica &amp; IA</span>
+        <h1>Pergunte à carteira de seguros em português.</h1>
+        <p>
+          O agente consulta regras oficiais em YAML, valida o SQL via AST (somente leitura com
+          <code>LIMIT</code>), executa no DuckDB e entrega tabela, gráfico e leitura executiva.
+        </p>
+      </div>
+
+      <!-- KPI Strip -->
+      <div class="kpi-grid" id="kpi-grid">
+        <article class="kpi-card">
+          <span class="kpi-label">Prêmio Emitido Total</span>
+          <strong class="kpi-value" id="kpi-premio">--</strong>
+          <span class="kpi-meta">Carteira 2023–2025 (sintética)</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">Apólices Emitidas</span>
+          <strong class="kpi-value" id="kpi-apolices">--</strong>
+          <span class="kpi-meta">4 ramos · 4 canais de venda</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">Taxa de Renovação</span>
+          <strong class="kpi-value" id="kpi-renovacao">--</strong>
+          <span class="kpi-meta">Base de apólices elegíveis</span>
+        </article>
+        <article class="kpi-card">
+          <span class="kpi-label">Sinistralidade Geral</span>
+          <strong class="kpi-value" id="kpi-sinistralidade">--</strong>
+          <span class="kpi-meta">Cálculo anti-fan-out (CTE)</span>
+        </article>
+      </div>
+
+      <!-- Prompt Input Box -->
+      <form id="ask-form" class="ask-card">
+        <label for="question-input" class="sr-only">Sua pergunta de negócio</label>
+        <div class="ask-row">
+          <input
+            id="question-input"
+            type="text"
+            placeholder="Ex.: Qual a sinistralidade por ramo? Ou: Qual canal tem maior churn?"
+            maxlength="300"
+            autocomplete="off"
+            required
+          />
+          <button id="ask-submit" class="btn-primary" type="submit">
+            <span class="btn-label">Analisar</span>
+            <span class="spinner hidden" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="ask-footer">
+          <div class="chips" id="example-chips">
+            <button type="button" class="chip" data-q="Qual a sinistralidade por ramo?">Sinistralidade por ramo</button>
+            <button type="button" class="chip" data-q="Qual a taxa de renovação e churn por canal de venda?">Renovação e churn por canal</button>
+            <button type="button" class="chip" data-q="Quais os principais motivos de não renovação?">Motivos de não renovação</button>
+            <button type="button" class="chip" data-q="Qual o ticket médio por ramo e segmento?">Ticket médio por segmento</button>
+            <button type="button" class="chip" data-q="Qual a evolução mensal do prêmio emitido?">Evolução mensal do prêmio</button>
+          </div>
+          <span class="char-counter" id="char-counter">0 / 300</span>
+        </div>
+      </form>
+
+      <div id="error-banner" class="error-banner hidden" role="alert"></div>
+    </section>
+
+    <!-- Results Feed -->
+    <section id="results-feed" class="results-feed" aria-live="polite">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon" aria-hidden="true">↗</div>
+        <h2>Pronto para analisar</h2>
+        <p>
+          Clique em uma das perguntas sugeridas acima ou digite sua própria análise de negócio.
+          Cada resposta mostra as métricas oficiais acionadas e o SQL auditável executado.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Slide-over Semantic Layer Drawer -->
+  <aside id="semantic-drawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-backdrop" id="close-semantic-backdrop"></div>
+    <div class="drawer-panel" role="dialog" aria-label="Catálogo da Camada Semântica">
+      <div class="drawer-header">
+        <div>
+          <h2>Camada Semântica (YAML)</h2>
+          <p>Métricas oficiais e tabelas governadas consultadas antes de gerar SQL.</p>
+        </div>
+        <button id="close-semantic-btn" class="icon-btn" type="button" aria-label="Fechar">✕</button>
+      </div>
+      <div class="drawer-tabs">
+        <button class="tab-btn active" data-tab="metrics" type="button">Métricas Oficiais</button>
+        <button class="tab-btn" data-tab="tables" type="button">Tabelas (DuckDB)</button>
+      </div>
+      <div id="drawer-content" class="drawer-content"></div>
+    </div>
+  </aside>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>Desenvolvido por <strong>Kaique Santos</strong> · <a href="https://github.com/kaique321123" target="_blank" rel="noopener">github.com/kaique321123</a></span>
+      <span>Dados 100% sintéticos · Protegido por AST SQL Validator + Rate Limit</span>
+    </div>
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

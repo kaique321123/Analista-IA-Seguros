@@ -21,6 +21,6 @@ data/*.duckdb.wal
 
 # Artefatos temporários
 outputs/
-*.html
+outputs/*.html
 .DS_Store
 Thumbs.db
