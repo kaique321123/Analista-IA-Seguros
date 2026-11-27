@@ -26,6 +26,8 @@ from analista_ia.guardrails import RateLimitExceeded
 
 COOKIE_NAME = "aid_visitor"
 COOKIE_MAX_AGE = 365 * 24 * 3600  # 1 ano
+QUOTA_KEY_PREFIX = "analista_ia:quota"
+QUOTA_TTL_SECONDS = 90 * 24 * 3600  # 90 dias (evita acumular lixo em Redis compartilhado)
 
 
 class QuotaStore(Protocol):
@@ -161,8 +163,11 @@ class UpstashRedisQuotaStore:
         if not keys:
             return
         try:
-            # Usa pipeline SET para gravar o novo patamar sincronizado entre todas as chaves
-            cmds = [["SET", k, str(value)] for k in keys]
+            current = self.get_many(keys)
+            cmds = [
+                ["SET", k, str(max(current.get(k, 0), value)), "EX", str(QUOTA_TTL_SECONDS)]
+                for k in keys
+            ]
             httpx.post(
                 f"{self.rest_url}/pipeline",
                 headers=self._headers(),
@@ -192,7 +197,7 @@ class CrossLinkedQuotaManager:
             f"{prefix}:{raw_value}".encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()[:32]
-        return f"q:{prefix}:{digest}"
+        return f"{QUOTA_KEY_PREFIX}:{prefix}:{digest}"
 
     def sign_visitor_id(self, visitor_id: str) -> str:
         sig = hmac.new(
