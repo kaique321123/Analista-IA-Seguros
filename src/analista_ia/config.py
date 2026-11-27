@@ -24,8 +24,14 @@ class Settings(BaseSettings):
 
     llm_provider: LLMProviderName = Field(default="gemini")
     llm_model: str = Field(default="")
-    llm_max_output_tokens: int = Field(default=800, ge=100, le=4096)
+    llm_max_output_tokens: int = Field(default=1000, ge=100, le=4096)
     llm_timeout_seconds: float = Field(default=45.0, ge=5.0, le=180.0)
+
+    # Proteções da API web para demonstrações públicas temporárias
+    rate_limit_max_requests: int = Field(default=15, ge=1, le=1000)
+    rate_limit_window_seconds: int = Field(default=600, ge=10, le=86400)
+    daily_request_cap: int = Field(default=200, ge=1, le=50000)
+    max_question_length: int = Field(default=300, ge=20, le=2000)
 
     gemini_api_key: str = Field(default="")
     anthropic_api_key: str = Field(default="")

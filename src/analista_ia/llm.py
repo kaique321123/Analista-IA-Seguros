@@ -117,14 +117,14 @@ class GeminiClient(LLMClient):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash",
-        max_output_tokens: int = 800,
+        model: str = "gemini-flash-lite-latest",
+        max_output_tokens: int = 1000,
         timeout_seconds: float = 45.0,
     ) -> None:
         if not api_key:
             raise LLMError("GEMINI_API_KEY não configurada no ambiente/.env.")
         self.api_key = api_key
-        self.model = model or "gemini-2.5-flash"
+        self.model = model or "gemini-flash-lite-latest"
         self.max_output_tokens = max_output_tokens
         self.timeout_seconds = timeout_seconds
 

@@ -125,7 +125,15 @@ analista-ia --provider mock "Qual a taxa de renovação e churn por canal de ven
 analista-ia
 ```
 
-### 5. Usar via Streamlit
+### 5. Usar via Interface Web (HTML/CSS/JS + FastAPI — Recomendada)
+Interface moderna com cards de KPI ao vivo, gráfico interativo Plotly, tabela com exportação CSV, SQL validado copiável, painel lateral da Camada Semântica e **proteção de cota por IP + teto diário** para demonstrações públicas temporárias:
+```bash
+analista-ia-web
+# ou: uvicorn analista_ia.web_server:app --host 0.0.0.0 --port 8000
+```
+Acesse em: `http://localhost:8000`
+
+### 6. Usar via Streamlit (alternativa rápida)
 ```bash
 streamlit run app/streamlit_app.py
 ```
@@ -171,6 +179,9 @@ python evals/run_eval.py
 python evals/run_eval.py --provider mock
 ```
 O relatório exibe **SQL Válido (%)** e **Execution Accuracy (%)** por categoria (*agregação básica, métrica semântica, anti-fan-out, join, série temporal*).
+
+**Resultado real observado (`gemini-flash-lite-latest`, 12 perguntas):**
+- **11/11 (100%) de Execution Accuracy** nas consultas executadas dentro da cota RPM gratuita (incluindo *anti-fan-out* de sinistralidade, *churn* com filtro de elegibilidade, *joins* e série temporal; o 12º caso atingiu o limite de requisições por minuto do tier gratuito).
 
 ---
 
