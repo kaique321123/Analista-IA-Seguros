@@ -456,7 +456,7 @@ function toggleDrawer(open) {
   els.drawer.setAttribute("aria-hidden", String(!open));
 }
 
-els.openSemanticBtn.addEventListener("click", () => toggleDrawer(true));
+if (els.openSemanticBtn) els.openSemanticBtn.addEventListener("click", () => toggleDrawer(true));
 els.closeSemanticBtn.addEventListener("click", () => toggleDrawer(false));
 els.closeSemanticBackdrop.addEventListener("click", () => toggleDrawer(false));
 

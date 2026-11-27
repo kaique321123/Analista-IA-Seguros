@@ -792,3 +792,11 @@ body, .topbar, .kpi-card, .ask-card, .result-card, .table-wrap, .chart-container
   .main-content { padding-top: var(--s4); }
   .result-card { padding: var(--s2); }
 }
+
+/* ---------- Cabeçalho: ações alinhadas à direita ---------- */
+.topbar-actions { margin-left: auto; justify-content: flex-end; }
+.hero-copy { margin-bottom: var(--s3); }
+.hero-copy h1 { margin-bottom: 0; }
+@media (max-width: 640px) {
+  .topbar-actions { margin-left: 0; width: 100%; justify-content: flex-end; }
+}
